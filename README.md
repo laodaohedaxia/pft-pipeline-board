@@ -1,5 +1,19 @@
 # SIM-001 流水线看板
 
-项目经理看总盘。同事打开 [GitHub Pages](https://laodaohedaxia.github.io/pft-pipeline-board/) 。
+本仓库是团队共享的 **SIM-001** 看板（`index.html` + `progress.json`）。
 
-进度在 `progress.json`。要写入需要一枚只能改这个仓库 Contents 的 Token，填在页面右上角，不要把 Token 提交进仓库。
+## GitHub Pages
+
+仓库所有者先开启 Pages：
+
+**Settings → Pages → Deploy from a branch → `main` → `/`（root）**
+
+开启后同事打开：
+
+https://laodaohedaxia.github.io/pft-pipeline-board/
+
+## 权限
+
+- **读**：公开即可浏览看板
+- **写**：需要 fine-grained PAT，仅对本仓库开 **Contents: Write**，粘贴到看板右上角密码框
+- **切勿**把 Token 提交进仓库
