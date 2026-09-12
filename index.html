@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SIM-001 流水线看板</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --panel: #1a222c;
+    --line: #2a3542;
+    --text: #e8eef4;
+    --muted: #8b9aab;
+    --lead: #e8b86d;
+    --mech: #7ec8a3;
+    --hw: #6ea8fe;
+    --sw: #c792ea;
+    --done: #3ecf8e;
+    --wip: #e8b86d;
+    --idle: #5c6b7a;
+    --na: #6b7280;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh;
+  }
+  header {
+    padding: 18px 24px 8px; display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;
+    justify-content: space-between; border-bottom: 1px solid var(--line);
+  }
+  h1 { font-size: 18px; margin: 0; font-weight: 650; }
+  .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  select, button, input {
+    background: var(--panel); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 10px; font-size: 13px;
+  }
+  button { cursor: pointer; }
+  button.primary { background: #2b6cb0; border-color: #2b6cb0; }
+  .who { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
+  .pipeline {
+    display: grid; grid-template-columns: repeat(9, minmax(110px, 1fr));
+    gap: 8px; padding: 16px 24px;
+  }
+  .station {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px; cursor: pointer; min-height: 88px;
+  }
+  .station.active { outline: 2px solid #4c8dff; }
+  .station .name { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+  .bar { height: 6px; background: #243040; border-radius: 99px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: var(--done); }
+  .meta { font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .board { padding: 0 24px 32px; display: grid; gap: 8px; }
+  .card {
+    display: grid; grid-template-columns: 110px 1fr 140px 160px 1fr;
+    gap: 10px; align-items: center; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  }
+  .id { font-size: 12px; color: var(--muted); }
+  .title { font-size: 14px; }
+  .role { font-size: 12px; font-weight: 600; }
+  .role.领导 { color: var(--lead); }
+  .role.结构 { color: var(--mech); }
+  .role.硬件 { color: var(--hw); }
+  .role.软件 { color: var(--sw); }
+  .note { width: 100%; }
+  .filters { padding: 0 24px 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { border-radius: 99px; padding: 5px 12px; font-size: 12px; cursor: pointer; border: 1px solid var(--line); background: transparent; color: var(--muted); }
+  .chip.on { color: var(--text); border-color: #4c8dff; background: #1c2b40; }
+  .hint { padding: 0 24px 16px; color: var(--muted); font-size: 12px; }
+  .dash { display:grid; grid-template-columns: repeat(4,1fr); gap:8px; padding:16px 24px 0; }
+  .kpi { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; }
+  .kpi b { display:block; font-size:22px; margin-top:4px; }
+  .kpi span { color:var(--muted); font-size:12px; }
+  .sync { padding:8px 24px 0; font-size:12px; color:var(--muted); }
+  .sync.ok { color:var(--done); }
+  .sync.err { color:#f0a0a0; }
+  .role.项目经理 { color: var(--lead); }
+  @media (max-width: 900px) {
+    .pipeline { grid-template-columns: repeat(3, 1fr); }
+    .card { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>SIM-001 便携式呼气流量监测仪</h1>
+    <div class="sub">项目经理看总盘。同事打开同一 GitHub 地址。填写入令牌后改动能同步到仓库。</div>
+  </div>
+  <div class="toolbar">
+    <label class="who">我是
+      <select id="who">
+        <option>项目经理</option>
+        <option>结构</option>
+        <option>硬件</option>
+        <option>软件</option>
+      </select>
+    </label>
+    <input id="token" type="password" placeholder="GitHub 写入令牌" style="width:180px" />
+    <button class="primary" id="exportBtn">导出 JSON</button>
+    <button id="importBtn">导入 JSON</button>
+    <input id="file" type="file" accept="application/json" hidden />
+  </div>
+</header>
+<div class="dash" id="dash"></div>
+<div class="sync" id="sync">正在连接后台…</div>
+<div class="pipeline" id="pipeline"></div>
+<div class="filters" id="filters"></div>
+<div class="hint">点上方阶段可只看那一站。状态：未开工 / 进行中 / 完成 / 不适用。</div>
+<div class="board" id="board"></div>
+<script>
+const STATIONS = [
+  {id:"s0", name:"立项 JL01"},
+  {id:"s1", name:"门1 输入"},
+  {id:"s2", name:"门2 架构"},
+  {id:"s3", name:"门3 硬件结构"},
+  {id:"s4", name:"门4 软件"},
+  {id:"s5", name:"门5 验证"},
+  {id:"s6", name:"门6 确认注册"},
+  {id:"s7", name:"门7 转换"},
+  {id:"s8", name:"门8 变更"},
+];
+const KEY = "sim001-board-v1";
+const DEFAULT = [
+  ["JL01","设计开发项目立项申请书","s0","项目经理","完成",""],
+  ["JL02","设计开发任务书","s1","项目经理","完成",""],
+  ["JL03","设计开发计划书","s1","项目经理","完成",""],
+  ["JL04","设计开发输入清单","s1","项目经理","完成",""],
+  ["JL13","产品需求说明书","s1","项目经理","完成",""],
+  ["JL14","风险分析计划","s1","项目经理","完成",""],
+  ["JL15","技术要求","s2","项目经理","完成","门2已冻口径"],
+  ["JL16","软件需求说明书","s1","软件","完成",""],
+  ["JL05","设计开发输出清单","s2","项目经理","完成","已开张"],
+  ["架构","框图与选型","s2","项目经理","完成",""],
+  ["JL18","硬件详细设计说明书","s3","硬件","完成","H01"],
+  ["JL19","硬件单元自测试报告","s3","硬件","完成","演练点亮"],
+  ["JL20","关键元器件清单","s3","硬件","完成",""],
+  ["BOM","产品BOM H01","s3","硬件","完成",""],
+  ["JL21","结构详细设计说明书","s3","结构","完成",""],
+  ["图纸","产品技术图纸","s3","硬件","进行中","电+结构图细化"],
+  ["JL17","软件详细设计说明书","s4","软件","完成","0.1.0"],
+  ["JL22","测试用例","s4","软件","完成","TC-01~06"],
+  ["JL23","软件验证与确认计划","s4","软件","完成",""],
+  ["JL31","网络安全研究报告","s4","软件","完成","无无线最小"],
+  ["JL33","软件研究报告","s4","软件","进行中",""],
+  ["JL34","软件互操作性研究报告","s4","软件","不适用","无外连"],
+  ["JL25","设计开发验证计划","s5","硬件","进行中",""],
+  ["JL07","设计开发验证报告","s5","硬件","进行中","演练非实测"],
+  ["JL24","软件验证与确认报告","s5","软件","进行中",""],
+  ["JL32","可追溯性分析报告","s5","软件","进行中",""],
+  ["JL29","GB/T 25000.51符合性","s5","软件","未开工","门5债"],
+  ["JL41","清洁与消毒验证报告","s5","结构","未开工","门5债"],
+  ["JL08","设计开发确认报告","s6","项目经理","未开工",""],
+  ["JL26","使用期限分析评估报告","s6","项目经理","未开工",""],
+  ["JL30","可用性报告","s6","软件","未开工",""],
+  ["JL36","标签样稿","s6","结构","未开工",""],
+  ["JL38","使用说明书","s6","项目经理","未开工",""],
+  ["JL09","试生产报告","s7","项目经理","未开工",""],
+  ["JL12","设计开发转化情况一览表","s7","项目经理","未开工",""],
+  ["JL35","关键工序（焊接）验证报告","s7","硬件","未开工",""],
+  ["JL37","产品合格证","s7","结构","未开工",""],
+  ["JL39","产品包装","s7","结构","未开工",""],
+  ["JL40","包装运输验证报告","s7","结构","未开工",""],
+  ["JL42","物料质量标准","s7","硬件","未开工",""],
+  ["JL43","生产工艺规程","s7","硬件","未开工",""],
+  ["JL44","成品检验规范","s7","项目经理","未开工",""],
+  ["JL10","设计开发更改申请单","s8","项目经理","未开工","常开"],
+  ["JL11","更改评审、验证确认表","s8","项目经理","未开工","常开"],
+  ["JL06","评审报告（滚动）","s8","项目经理","进行中","每门一张"],
+  ["JL28","风险管理报告（滚动）","s8","项目经理","进行中","滚动"],
+].map(([id,name,station,owner,status,note]) => ({id,name,station,owner,status,note,updatedBy:"",updatedAt:""}));
+
+const GH = { owner: "laodaohedaxia", repo: "pft-pipeline-board", path: "progress.json", branch: "main" };
+const GH_API = `https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${GH.path}`;
+function loadLocal() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return {items: DEFAULT};
+}
+let state = loadLocal();
+let fileSha = "";
+let who = localStorage.getItem(KEY+"-who") || "项目经理";
+let filterRole = "全部";
+let filterStation = "";
+let syncing = false;
+
+const whoEl = document.getElementById("who");
+whoEl.value = who;
+whoEl.onchange = () => {
+  who = whoEl.value;
+  localStorage.setItem(KEY+"-who", who);
+  if (who === "项目经理") filterRole = "全部";
+  else filterRole = who;
+  render();
+};
+const tokenEl = document.getElementById("token");
+tokenEl.value = localStorage.getItem(KEY+"-token") || "";
+tokenEl.onchange = () => localStorage.setItem(KEY+"-token", tokenEl.value.trim());
+function token() { return (tokenEl.value || localStorage.getItem(KEY+"-token") || "").trim(); }
+function ghHeaders() {
+  const h = { "Accept": "application/vnd.github+json" };
+  if (token()) h.Authorization = "Bearer " + token();
+  return h;
+}
+
+function setSync(ok, msg) {
+  const el = document.getElementById("sync");
+  if (!el) return;
+  el.className = "sync " + (ok ? "ok" : "err");
+  el.textContent = msg;
+}
+
+async function pull() {
+  try {
+    const r = await fetch(GH_API + "?ref=" + GH.branch + "&t=" + Date.now(), { headers: ghHeaders() });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const meta = await r.json();
+    fileSha = meta.sha;
+    const json = JSON.parse(decodeURIComponent(escape(atob(meta.content.replace(/\n/g,"")))));
+    if (json && Array.isArray(json.items) && json.items.length) {
+      state = json;
+      localStorage.setItem(KEY, JSON.stringify(state));
+      render();
+    }
+    setSync(true, "已从 GitHub 同步 · " + new Date().toLocaleTimeString());
+  } catch (e) {
+    setSync(false, "GitHub 读取失败，先用本机缓存");
+  }
+}
+
+async function push() {
+  localStorage.setItem(KEY, JSON.stringify(state));
+  if (!token()) { setSync(false, "填写入令牌后才能同步给同事"); return; }
+  syncing = true;
+  try {
+    if (!fileSha) {
+      const g = await fetch(GH_API + "?ref=" + GH.branch, { headers: ghHeaders() });
+      if (g.ok) fileSha = (await g.json()).sha;
+    }
+    const body = JSON.stringify(state);
+    const content = btoa(unescape(encodeURIComponent(body)));
+    const r = await fetch(GH_API, {
+      method: "PUT",
+      headers: Object.assign(ghHeaders(), {"Content-Type":"application/json"}),
+      body: JSON.stringify({ message: "board: " + who + " 更新进度", content, sha: fileSha, branch: GH.branch })
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const out = await r.json();
+    fileSha = out.content && out.content.sha;
+    setSync(true, "已写入 GitHub · " + new Date().toLocaleTimeString());
+  } catch (e) {
+    setSync(false, "写入失败：检查令牌权限");
+  }
+  syncing = false;
+}
+function save(state) { push(); }
+
+function pct(items) {
+  const active = items.filter(i => i.status !== "不适用");
+  if (!active.length) return 100;
+  const done = active.filter(i => i.status === "完成").length;
+  return Math.round(done / active.length * 100);
+}
+
+function renderPipeline() {
+  const el = document.getElementById("pipeline");
+  el.innerHTML = "";
+  STATIONS.forEach(s => {
+    const items = state.items.filter(i => i.station === s.id);
+    const p = pct(items);
+    const div = document.createElement("div");
+    div.className = "station" + (filterStation === s.id ? " active" : "");
+    div.innerHTML = `<div class="name">${s.name}</div>
+      <div class="bar"><i style="width:${p}%"></i></div>
+      <div class="meta">${p}% · ${items.filter(i=>i.status==="完成").length}/${items.filter(i=>i.status!=="不适用").length}</div>`;
+    div.onclick = () => { filterStation = filterStation === s.id ? "" : s.id; render(); };
+    el.appendChild(div);
+  });
+}
+
+function renderFilters() {
+  const el = document.getElementById("filters");
+  el.innerHTML = "";
+  ["全部","项目经理","结构","硬件","软件"].forEach(r => {
+    const b = document.createElement("button");
+    b.className = "chip" + (filterRole === r ? " on" : "");
+    b.textContent = r;
+    b.onclick = () => { filterRole = r; render(); };
+    el.appendChild(b);
+  });
+}
+
+function renderBoard() {
+  const el = document.getElementById("board");
+  el.innerHTML = "";
+  state.items.filter(i => {
+    if (filterRole !== "全部" && i.owner !== filterRole) return false;
+    if (filterStation && i.station !== filterStation) return false;
+    return true;
+  }).forEach((item, idx) => {
+    const row = document.createElement("div");
+    row.className = "card";
+    const stName = STATIONS.find(s => s.id === item.station)?.name || item.station;
+    row.innerHTML = `
+      <div class="id">${item.id}<div class="sub">${stName}</div></div>
+      <div class="title">${item.name}</div>
+      <div class="role ${item.owner}">${item.owner}</div>
+      <select class="st"></select>
+      <input class="note" placeholder="备注，做完写一句" />`;
+    const sel = row.querySelector(".st");
+    ["未开工","进行中","完成","不适用"].forEach(s => {
+      const o = document.createElement("option");
+      o.value = s; o.textContent = s; if (item.status === s) o.selected = true;
+      sel.appendChild(o);
+    });
+    const note = row.querySelector(".note");
+    note.value = item.note || "";
+    const commit = () => {
+      item.status = sel.value;
+      item.note = note.value;
+      item.updatedBy = who;
+      item.updatedAt = new Date().toISOString();
+      save(state);
+      renderPipeline();
+    };
+    sel.onchange = commit;
+    note.onchange = commit;
+    el.appendChild(row);
+  });
+}
+
+function renderDash() {
+  const el = document.getElementById("dash");
+  if (!el) return;
+  const items = state.items;
+  const active = items.filter(i => i.status !== "不适用");
+  const done = active.filter(i => i.status === "完成").length;
+  const wip = active.filter(i => i.status === "进行中").length;
+  const idle = active.filter(i => i.status === "未开工").length;
+  const recent = items.filter(i => i.updatedAt).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))[0];
+  el.innerHTML = `
+    <div class="kpi"><span>整体完成</span><b>${pct(active)}%</b></div>
+    <div class="kpi"><span>进行中</span><b>${wip}</b></div>
+    <div class="kpi"><span>未开工</span><b>${idle}</b></div>
+    <div class="kpi"><span>最近更新</span><b style="font-size:14px">${recent ? (recent.id + " · " + (recent.updatedBy||"—")) : "暂无"}</b></div>`;
+}
+function render() {
+  renderDash();
+  renderPipeline();
+  renderFilters();
+  renderBoard();
+}
+
+
+document.getElementById("exportBtn").onclick = () => {
+  const blob = new Blob([JSON.stringify(state, null, 2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "progress.json";
+  a.click();
+};
+document.getElementById("importBtn").onclick = () => document.getElementById("file").click();
+document.getElementById("file").onchange = (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => { state = JSON.parse(r.result); save(state); render(); };
+  r.readAsText(f);
+};
+if (who === "项目经理") filterRole = "全部";
+render();
+pull();
+setInterval(() => { if (!syncing) pull(); }, 10000);
+</script>
+</body>
+</html>
